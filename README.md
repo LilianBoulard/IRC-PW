@@ -1,3 +1,6 @@
+This is an IRC client/server project. It is a proof of work,
+and should not be used seriously.
+
 # Énoncé
 
 Le but de ce mini-projet est de réaliser un service de discussion en ligne (*Internet Relay Chat* ou IRC) en Python.
@@ -62,3 +65,40 @@ implémentera toutes les commandes décrites ci-dessus.
 **Deuxième version du projet** : Dans cette version, il s’agit de connecter plusieurs serveurs entre eux, de réaliser
 l’acheminement des messages et des informations (liste des canaux, des utilisateurs présents dans ces canaux, etc.)
 entre les serveurs.
+
+# Design
+
+## Client
+
+The client is a simple software that just handles commands.  
+When it is created, it is registered on the server.  
+Commands entered by the human are submitted to the server the client is connected to.
+
+## Server
+
+The server doesn't have a GUI.  
+When a client information is received, it is saved only on the server that received it.
+
+## Technical notes
+
+Queries are sent over the network with a custom format:
+`command:<nickname>:<command>:<parameters>:<timestamp>`
+- "command" is a constant
+- `nickname` is the name of the client sending the command
+- `command` is the name of the command, for example `away`
+- `parameters` contains formatted arguments of the command, for `away` that might be a message
+  ; this is an optional field
+- `timestamp` is a UNIX epoch timestamp of the moment when this command was sent
+Responses are sent over the network with this format:
+`response:<nickname>:<content>:<timestamp>`
+- "response" is a constant
+- `nickname` is the name of the recipient
+- `content` contains a human-readable string which is supposed to be printed to the user
+- `timestamp` is a UNIX epoch timestamp of the moment this response was sent
+
+## Limitations and issues
+
+- There is no login security for users. Anyone can be impersonated.
+- As such, multiple users can have the same nickname at the same time (though not on the same server). 
+  Such a situation can cause a de-sync of messages (one might receive it but not other).
+- Only works on a local machine. As stated by the *Énoncé*, server names are actually localhost port numbers.
