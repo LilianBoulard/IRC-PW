@@ -10,6 +10,9 @@ from kivymd.uix.card import MDCard
 from kivymd.uix.label import MDLabel
 
 from .._events import global_stop_event
+from ..objects import Message
+from .._utils import iter_to_dict
+from ..commands import Commands
 
 
 class WindowManager(ScreenManager):
@@ -39,16 +42,16 @@ class ChannelScreen(Screen):
         self._populate()
 
     def _populate(self) -> None:
-        conversations = []
-        for conv in conversations:
-
-            chat_item = ChatListItem()
-            chat_item.friend_name = last_message.author.name
-            chat_item.friend_avatar = last_message.author.pattern
-            chat_item.message = last_message.value
-            chat_item.timestamp = last_message.time_received
-            chat_item.sender = last_message.author
-            self.ids.chat_list.add_widget(chat_item)
+        messages = Message.all()
+        messages_by_channel = iter_to_dict(messages, key=lambda message: message.channel)
+        for channel, messages in messages_by_channel.items():
+            for message in messages:
+                chat_item = ChatListItem()
+                chat_item.friend_name = message.channel
+                chat_item.message = message.content
+                chat_item.timestamp = message.timestamp
+                chat_item.sender = message.author
+                self.ids.chat_list.add_widget(chat_item)
 
 
 class ChatBubble(MDBoxLayout):
@@ -69,7 +72,8 @@ class ChatScreen(Screen):
     name = StringProperty("active_chat")
     text = StringProperty()
 
-    def __init__(self, **kwargs):
+    def __init__(self, channel_name: str, **kwargs):
+        self.channel_name = channel_name
         super().__init__(**kwargs)
 
     def on_enter(self, *args):
@@ -77,10 +81,10 @@ class ChatScreen(Screen):
 
     def _populate(self) -> None:
         displayed: int = 0
-        for message in self.conversation.clear_messages:
+        for message in Message.all(channel=self.channel_name):
             chat_bubble = ChatBubble()
-            chat_bubble.message = message.value
-            chat_bubble.time = message.time_received
+            chat_bubble.message = message.content
+            chat_bubble.time = message.timestamp
             chat_bubble.sender = message.author
             self.ids.message_list.add_widget(chat_bubble)
             displayed += 1
@@ -93,6 +97,7 @@ class ChatScreen(Screen):
 class MainApp(MDApp):
 
     wm: ScreenManager
+    commands = Commands()
 
     def __init__(self, **kwargs):
         Window.size = (320, 600)
@@ -128,17 +133,28 @@ class MainApp(MDApp):
         else:
             self.theme_cls.theme_style = "Dark"
 
-    def create_chat(self, conv_id: int):
+    def create_chat(self, channel: str):
         """
         Get all messages and create a chat screen.
         """
-        chat_screen = ChatScreen()  # FIXME
-        chat_screen.text = conv_id  # FIXME
-        chat_screen.image = ""  # FIXME
+        chat_screen = ChatScreen(channel)  # FIXME
+        chat_screen.name = channel
+        chat_screen.text = "C'est quoi ça?"
         self.wm.switch_to(chat_screen)
 
     def send(self):
         chat_screen = self.wm.get_screen("active_chat")
         text_input = chat_screen.ids.input.ids.value
-        # Clear input
+        if text_input.startswith('/'):
+            identifier = text_input[1:].split()[0]
+            # The message is a command
+            command = self.commands[identifier].parse(text_input)
+        else:
+            command = self.commands["msg"](
+                nickname="",  # FIXME
+                parameters=[text_input],
+            )
+        # TODO
+
+        # Clear input field
         text_input.text = ""

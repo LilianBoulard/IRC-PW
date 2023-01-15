@@ -5,11 +5,15 @@ import socket
 import threading as th
 import queue
 
-import pydantic
+from tinydb.queries import where
 
 from .config import network_buffer_size
-from .commands import Commands
+from .commands import Command
+from ._handler import CommandHandler
 from .threads import BaseThread
+from .database import Database
+from .objects import AwayRegister, Message
+from .design import Singleton
 
 
 # Commands in this queue will be sent by an independent thread
@@ -21,7 +25,7 @@ handle_queue: queue.Queue[bytes] = queue.Queue()
 
 class HandlerThread(BaseThread):
     def run(self):
-        commands = Commands()
+        handler = ServerHandler()
         while self.running:
             # We don't block because we want to be able to stop the thread
             # with a condition.
@@ -35,26 +39,53 @@ class HandlerThread(BaseThread):
             except:
                 continue
 
-            # Extract the identifier
-            try:
-                _, identifier, *_ = raw_command.split(':')
-            except:
-                continue
-
-            # Instantiate the command
-            if identifier not in commands:
-                continue
-            try:
-                command = commands[identifier].parse(raw_command)
-            except pydantic.ValidationError:
-                continue
-
-            # Now that we have the command, we'll run the server action.
-            command.server_action()
+            handler(raw_command, {})
 
 
 class SenderThread(BaseThread):
     def run(self):
+        pass
+
+
+class ServerHandler(CommandHandler):
+
+    def __init__(self):
+        super().__init__()
+        self.server = OwnServer()
+
+    def parse_command(self, command: str, _: dict) -> Command:
+        nickname, recipient, command, *parameters, timestamp = command.split(':')
+        # In case there was some colon in the parameters section,
+        # let's construct it back
+        parameters = ':'.join(parameters)
+        return Command(
+            author=nickname,
+            recipient=recipient,
+            identifier=command,
+            parameters=eval(parameters),  # FIXME: Extremely dangerous
+        )
+
+    def away(self, command: Command):
+        with Database() as db:
+            if dbo := db.search(where('nickname') == command.author):
+                # User has used /away before, we remove the entry
+                away_reg = AwayRegister(**dbo)
+                db.remove(away_reg)
+            else:
+                # User has no registry already saved, creating one (they're now away)
+                db.upsert(AwayRegister(
+                    nickname=command.author,
+                    message=" ".join(command.parameters) if command.parameters else "",
+                ))
+
+    def help(self, command: Command):
+        """Not implemented by the server"""
+        return
+
+    def invite(self, command: Command):
+        pass
+
+    def _invalid(self, command: Command):
         pass
 
 
@@ -72,12 +103,61 @@ class Server:
     def from_name(cls, name: str):
         return cls("localhost", int(name))
 
+
+class OwnServer(Server, Singleton):
+
     def sync(self, *srv: tuple[Server]):
         """
         Takes one or more other servers, and registers them locally so that
         information can be replicated over those.
         """
         self._peers.extend(srv)
+
+    def _send(self, content: bytes, peer: Server):
+        """
+        Send something to someone specific.
+        """
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_sock:
+            client_sock.settimeout(5)
+            try:
+                client_sock.connect((peer.address, peer.port))
+                total_sent = 0
+                while total_sent < len(content):
+                    sent = client_sock.send(content[total_sent:])
+                    if sent == 0:
+                        raise RuntimeError("Socket connection broken")
+                    total_sent += sent
+            except (
+                    socket.timeout,
+                    ConnectionRefusedError,
+                    ConnectionResetError,
+                    OSError,
+            ):
+                print(
+                    f"Could not send {content!r} to {peer!r}"
+                )
+            except Exception as e:
+                print(f"Unhandled {type(e)} exception caught: {e!r}")
+
+    def _broadcast(self, content: bytes):
+        """
+        Send something to all peers (other servers).
+        """
+        for peer in self._peers:
+            self._send(content, peer)
+
+    def transmit(self, command: Command):
+        """
+        Transmits a command to every server we're synced with.
+        """
+        self._broadcast(command.json().encode())
+
+    def send(self, message: Message):
+        """
+        Sends a message to a client. In practice, stores it locally if the user is stored on this server,
+        otherwise, broadcast it.
+        """
+        pass
 
     def listen(self):
         self._handler_thread.start()

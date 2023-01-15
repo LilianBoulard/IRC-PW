@@ -1,32 +1,23 @@
 import pydantic
 
-from abc import ABC, abstractmethod
-from argparse import ArgumentParser
-
-from ..design import Singleton
-from .._utils import get_time
+from .design import Singleton
+from ._utils import get_time
 
 
-class Command(ABC, pydantic.BaseModel):
+class Command(pydantic.BaseModel):
 
-    """
-    Base class for commands.
-
-    All commands should inherit this class.
-    Commands should not inherit each other.
-    """
-
-    nickname: str
+    author: str  # Nickname
+    recipient: str  # Channel or nickname
     identifier: str
     parameters: list[str]
-    _argument_parser: ArgumentParser
 
     def __repr__(self) -> str:
         return (
             f"command"
-            f":{self.nickname}"
+            f":{self.author}"
+            f":{self.recipient}"
             f":{self.identifier}"
-            f":{[repr(parameter) for parameter in self.parameters]}"
+            f":{self.parameters}"
             f":{get_time()}"
         )
 
@@ -37,24 +28,17 @@ class Command(ABC, pydantic.BaseModel):
         """
         if not command.startswith("command:"):
             raise pydantic.ValidationError
-        nickname, command, *parameters, timestamp = command.split(':')
+        nickname, recipient, command, *parameters, timestamp = command.split(':')
         # In case there was some colon in the parameters section,
         # let's construct it back
         parameters = ':'.join(parameters)
         assert command == cls.identifier
         return cls(
-            nickname=nickname,
+            author=nickname,
+            recipient=recipient,
             identifier=cls.identifier,
             parameters=eval(parameters),  # FIXME: Extremely dangerous
         )
-
-    @abstractmethod
-    def client_action(self):
-        pass
-
-    @abstractmethod
-    def server_action(self):
-        pass
 
 
 class Commands(Singleton):

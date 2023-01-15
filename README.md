@@ -90,9 +90,10 @@ Queries are sent over the network with a custom format:
   ; this is an optional field
 - `timestamp` is a UNIX epoch timestamp of the moment when this command was sent
 Responses are sent over the network with this format:
-`response:<nickname>:<content>:<timestamp>`
+`response:<author>:<recipient>:<content>:<timestamp>`
 - "response" is a constant
-- `nickname` is the name of the recipient
+- `author` is the name of the author, whether it be a client or a server
+- `recipient` is the name of the recipient
 - `content` contains a human-readable string which is supposed to be printed to the user
 - `timestamp` is a UNIX epoch timestamp of the moment this response was sent
 
