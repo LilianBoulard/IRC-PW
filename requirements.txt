@@ -1,2 +1,5 @@
+pip
 tinydb
 pydantic
+kivy
+kivymd

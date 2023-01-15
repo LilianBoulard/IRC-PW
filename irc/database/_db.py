@@ -12,7 +12,6 @@ class Database(Singleton):
 
     """
     Simple, generic interface to access a TinyDB file.
-    Database logic is implemented in the Sami objects.
     """
 
     _db: TinyDB
@@ -34,7 +33,7 @@ class Database(Singleton):
 
     def upsert(self, identifier: int, command: Command) -> None:
         """
-        Takes any object from Sami and inserts/updates the information
+        Takes any object from and inserts/updates the information
         in the database.
         """
         self._table.upsert(Document(command.dict(), doc_id=identifier))

@@ -102,3 +102,31 @@ Responses are sent over the network with this format:
 - As such, multiple users can have the same nickname at the same time (though not on the same server). 
   Such a situation can cause a de-sync of messages (one might receive it but not other).
 - Only works on a local machine. As stated by the *Énoncé*, server names are actually localhost port numbers.
+
+# Usage
+
+You will need python >= 3.9 to run this.
+If you're on linux, use the following commands:
+```commandline
+$ [python3|python] --version
+$ [python3|python] -m venv venv
+$ source venv/bin/activate
+$ python -m pip install --upgrade -r requirements.txt
+$ bash ./setup_venv.sh
+$ source venv/bin/activate
+$ python [client|server].py
+```
+
+On Windows, the process is similar:
+
+```commandline
+>>> [py|python] --version
+>>> [py|python] -m venv venv
+>>> venv\Scripts\activate.bat
+>>> python -m pip install --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org --upgrade -r requirements.txt
+>>> python [client|server].py
+```
+
+It setups a dedicated environment in the `venv/` directory,
+uses its interpreter, install the requirements, and finally,
+you can run the client or the server.

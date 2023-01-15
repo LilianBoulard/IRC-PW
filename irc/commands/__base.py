@@ -88,3 +88,19 @@ class Response(pydantic.BaseModel):
             f":{self.content}"
             f":{get_time()}"
         )
+
+    @classmethod
+    def parse(cls, command: str):
+        """
+        Parse the representation of a response (see `__repr__`).
+        """
+        if not command.startswith("command:"):
+            raise pydantic.ValidationError
+        nickname, *content, timestamp = command.split(':')
+        # In case there was some colon in the content,
+        # let's construct it back
+        content = ':'.join(content)
+        return cls(
+            nickname=nickname,
+            content=content,
+        )

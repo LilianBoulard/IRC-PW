@@ -1,4 +1,4 @@
-from irc import Client, ServerConnection
+from irc import Client, ServerConnection, Controller
 
 from argparse import ArgumentParser
 
@@ -20,5 +20,5 @@ if __name__ == "__main__":
     client = Client(_args.nickname)
     client.connection = ServerConnection.from_name(_args.server_name)
     app = Controller()
-    app.loop()
+    app.run()
     client.close()

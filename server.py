@@ -1,4 +1,4 @@
-from irc import Server
+from irc import Server, Controller
 
 from argparse import ArgumentParser
 
@@ -21,5 +21,5 @@ if __name__ == "__main__":
     server.sync(*_args.servers)
     server.listen()
     app = Controller(has_ui=False)
-    app.loop()
+    app.run()
     server.close()
