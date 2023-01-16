@@ -6,21 +6,19 @@ import threading as th
 import queue
 
 from tinydb.queries import where
+from json import JSONDecoder
 
 from .config import network_buffer_size
-from .commands import Command
 from ._handler import CommandHandler
 from .threads import BaseThread
 from .database import Database
-from .objects import AwayRegister, Message
+from .objects import AwayRegister, Command, ServerChannel, User
 from .design import Singleton
+from ._utils import Printer
 
-
-# Commands in this queue will be sent by an independent thread
-send_queue: queue.Queue[str] = queue.Queue()
-
-# Raw commands in this queue will be handled by an independent thread
 handle_queue: queue.Queue[bytes] = queue.Queue()
+
+printer = Printer(verbose=4)
 
 
 class HandlerThread(BaseThread):
@@ -38,13 +36,7 @@ class HandlerThread(BaseThread):
                 continue
             except:
                 continue
-
-            handler(raw_command, {})
-
-
-class SenderThread(BaseThread):
-    def run(self):
-        pass
+            handler(raw_command)
 
 
 class ServerHandler(CommandHandler):
@@ -53,16 +45,18 @@ class ServerHandler(CommandHandler):
         super().__init__()
         self.server = OwnServer()
 
-    def parse_command(self, command: str, _: dict) -> Command:
-        nickname, recipient, command, *parameters, timestamp = command.split(':')
+    def _parse_command(self, command: str) -> Command:
+        printer.error(f"Got this command: {command!r}")
+        _, nickname, recipient, command, *parameters, timestamp = command.split(':')
         # In case there was some colon in the parameters section,
         # let's construct it back
         parameters = ':'.join(parameters)
+        printer.warning(parameters)
         return Command(
             author=nickname,
             recipient=recipient,
             identifier=command,
-            parameters=eval(parameters),  # FIXME: Extremely dangerous
+            parameters=JSONDecoder().decode(parameters),
         )
 
     def away(self, command: Command):
@@ -75,15 +69,152 @@ class ServerHandler(CommandHandler):
                 # User has no registry already saved, creating one (they're now away)
                 db.upsert(AwayRegister(
                     nickname=command.author,
-                    message=" ".join(command.parameters) if command.parameters else "",
+                    message=command.parameters["message"],
                 ))
 
     def help(self, command: Command):
-        """Not implemented by the server"""
+        """Not implemented by the run_server"""
         return
 
     def invite(self, command: Command):
-        pass
+        chan = ServerChannel.from_name(command.parameters["channel"])
+        if not chan:
+            return
+        if command.parameters["key"] != chan.key:
+            self.server.send(Command(
+                author=repr(self.server),
+                recipient=command.author,
+                identifier="message",
+                parameters={
+                    "content": (f"Could not invite user {command.recipient!r} "
+                                f"to channel {command.parameters['channel']!r}: "
+                                f"invalid key {command.parameters['key']!r}.")
+                }
+            ))
+
+    def join(self, command: Command):
+        chan = ServerChannel.from_name(command.parameters["channel"])
+        if not chan:
+            # We don't know this channel, so we'll create it.
+            if command.recipient == repr(self.server):
+                # This is the declaration of a channel that has been created
+                # on another host.
+                chan = ServerChannel(
+                    name=command.parameters["channel"],
+                    host=command.author,
+                    key=command.parameters["key"],
+                    members=[command.author],
+                )
+                chan.upsert()
+            else:
+                chan = ServerChannel(
+                    name=command.parameters["channel"],
+                    host=repr(self),
+                    key=command.parameters["key"],
+                    members=[command.author],
+                )
+                chan.upsert()
+                # Propagate the channel info to other servers
+                for peer in self.server.peers:
+                    self.server.send(Command(
+                        author=repr(self.server),
+                        recipient=repr(peer),
+                        identifier=command.identifier,
+                        parameters={
+                            "host": chan.host,
+                            "channel": chan.name,
+                            "key": chan.key,
+                        },
+                    ))
+        else:
+            # We know this channel
+            if chan.host == repr(self.server):
+                # We are the host of this channel
+                if command.parameters["key"] != chan.key:
+                    self.server.send(Command(
+                        author=repr(self.server),
+                        recipient=command.author,
+                        identifier="msg",
+                        parameters={
+                            "content": (f"Cannot join channel "
+                                        f"{command.parameters['channel']!r}: "
+                                        f"invalid key {command.parameters['key']!r}."),
+                        },
+                    ))
+            else:
+                # We are not the channel host, just transmit the command.
+                self.server.send(Command(
+                    author=command.author,
+                    recipient=chan.host,
+                    identifier=command.identifier,
+                    parameters={
+                        "host": chan.host,
+                        "channel": command.parameters["channel"],
+                        "key": command.parameters["key"],
+                    },
+                ))
+
+    def list(self, command: Command):
+        self.server.send(Command(
+            author=repr(self.server),
+            recipient=command.author,
+            identifier="msg",
+            parameters={
+                "content": "\n".join([chan.name for chan in ServerChannel.all()]),
+            },
+        ))
+
+    def msg(self, command: Command):
+        self.server.send(Command(
+            author=command.author,
+            recipient=command.recipient,
+            identifier=command.identifier,
+            parameters=command.parameters,
+        ))
+
+    def names(self, command: Command):
+        if command.parameters["channel"]:
+            chan = ServerChannel.from_name(command.parameters["channel"])
+            if not chan:
+                # This channel doesn't exist
+                # Transmit the response.
+                self.server.send(Command(
+                    author=repr(self.server),
+                    recipient=command.author,
+                    identifier="msg",
+                    parameters={
+                        "content": f"The channel {command.parameters['channel']!r} "
+                                   f"does not exist.",
+                    },
+                ))
+                return
+            if chan.host == repr(self.server):
+                self.server.send(Command(
+                    author=repr(self.server),
+                    recipient=command.author,
+                    identifier="msg",
+                    parameters={
+                        "content": f"{chan.name!r}: {' - '.join(chan.members)}",
+                    },
+                ))
+            else:
+                # We are not the host ; only they know the members
+                self.server.send(Command(
+                    author=command.author,
+                    recipient=chan.host,
+                    identifier=command.identifier,
+                    parameters=command.parameters,
+                ))
+        else:
+            for chan in ServerChannel.all():
+                self.server.send(Command(
+                    author=repr(self.server),
+                    recipient=command.author,
+                    identifier="msg",
+                    parameters={
+                        "content": f"{chan.name!r}: {' - '.join(chan.members)}",
+                    },
+                ))
 
     def _invalid(self, command: Command):
         pass
@@ -95,9 +226,8 @@ class Server:
         self.address = address
         self.port = port
 
-        self._handler_thread = HandlerThread()
-        self._peers = []  # see method `sync`
-        self._stop_event = th.Event()
+    def __repr__(self):
+        return f"{self.address}:{self.port}"
 
     @classmethod
     def from_name(cls, name: str):
@@ -106,12 +236,20 @@ class Server:
 
 class OwnServer(Server, Singleton):
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self._listen_thread = th.Thread(target=self.listen_for_commands)
+        self._handler_thread = HandlerThread()
+        self.peers = []  # see method `sync`
+        self._stop_event = th.Event()
+
     def sync(self, *srv: tuple[Server]):
         """
         Takes one or more other servers, and registers them locally so that
         information can be replicated over those.
         """
-        self._peers.extend(srv)
+        self.peers.extend(srv)
 
     def _send(self, content: bytes, peer: Server):
         """
@@ -125,7 +263,7 @@ class OwnServer(Server, Singleton):
                 while total_sent < len(content):
                     sent = client_sock.send(content[total_sent:])
                     if sent == 0:
-                        raise RuntimeError("Socket connection broken")
+                        printer.error("Socket connection broken")
                     total_sent += sent
             except (
                     socket.timeout,
@@ -133,38 +271,41 @@ class OwnServer(Server, Singleton):
                     ConnectionResetError,
                     OSError,
             ):
-                print(
-                    f"Could not send {content!r} to {peer!r}"
-                )
+                printer.error(f"Could not send {content!r} to {peer!r}")
             except Exception as e:
-                print(f"Unhandled {type(e)} exception caught: {e!r}")
+                printer.error(f"Unhandled {type(e)} exception caught: {e!r}")
 
-    def _broadcast(self, content: bytes):
+    def send(self, command: Command):
         """
-        Send something to all peers (other servers).
+        Sends a command to someone.
+        The contact information is inside the command.
         """
-        for peer in self._peers:
-            self._send(content, peer)
+        if command.recipient == "*":
+            cmd = repr(command).encode()
+            for peer in self.peers:
+                self._send(cmd, peer)
+            return
 
-    def transmit(self, command: Command):
-        """
-        Transmits a command to every server we're synced with.
-        """
-        self._broadcast(command.json().encode())
+        contact = User.from_name(command.recipient)
+        if not contact:
+            # This is not a user we know
+            pass
 
-    def send(self, message: Message):
-        """
-        Sends a message to a client. In practice, stores it locally if the user is stored on this server,
-        otherwise, broadcast it.
-        """
-        pass
+        contact = ServerChannel.from_name(command.recipient)
+        if not contact:
+            # This is not a contact
+            # That was the last possibility, exit
+            return
+
+        printer.info(f"Sending {command!r}")
 
     def listen(self):
         self._handler_thread.start()
+        self._listen_thread.start()
 
     def listen_for_commands(self) -> None:
         """
-        Sets up a server and listens on a port.
+        Sets up a run_server and listens on a port.
         It requires a TCP connection to receive information.
         """
         with socket.socket() as server_socket:
@@ -173,13 +314,12 @@ class OwnServer(Server, Singleton):
             server_socket.listen()
             while not self._stop_event.is_set():
                 connection, address = server_socket.accept()
-                raw_command, _ = self._receive_all(connection, address)
+                raw_command, _ = self._receive_all(connection)
+                printer.info(f"Received raw command {raw_command.decode()}")
                 handle_queue.put(raw_command)
                 connection.close()
 
-    def _receive_all(
-            self, sock: socket.socket, address_check: str | None = None
-    ) -> tuple[bytes, tuple[str, int]]:
+    def _receive_all(self, sock: socket.socket) -> tuple[bytes, tuple[str, int]]:
         """
         Receives all parts of a network-sent message.
         Takes a socket object and returns a tuple with
@@ -189,12 +329,11 @@ class OwnServer(Server, Singleton):
         data = bytes()
         while True:
             part, addr = sock.recvfrom(network_buffer_size)
-            if address_check:
-                if addr == address_check:
-                    data += part
-            else:
-                data += part
+            data += part
             if len(part) < network_buffer_size:
                 # Either 0 or end of data
                 break
         return data, addr
+
+    def close(self):
+        self._stop_event.set()

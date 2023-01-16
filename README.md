@@ -1,4 +1,4 @@
-This is an IRC client/server project. It is a proof of work,
+This is an IRC client/run_server project. It is a proof of work,
 and should not be used seriously.
 
 # Énoncé
@@ -27,10 +27,10 @@ commencent par un symbole #.
   (en réponse un message peut être envoyé). Une nouvelle commande `/away` réactive l’utilisateur.
 - `/help` - Affiche la liste des commandes disponibles.
 - `/invite <nick>` - Invite un utilisateur sur le canal où on se trouve
-- `/join <canal> [clé]` - Permet de rejoindre un canal (protégé éventuellement par une clé). Le canal est créé s’il n’existe pas.
+- `/join <channel> [key]` - Permet de rejoindre un canal (protégé éventuellement par une clé). Le canal est créé s’il n’existe pas.
 - `/list` - Affiche la liste des canaux sur IRC.
-- `/msg [canal|nick] message` - Pour envoyer un message à un utilisateur ou sur un canal (où on est présent ou pas). 
-  Les arguments `canal` ou `nick` sont optionnels.
+- `/msg [channel|nick] message` - Pour envoyer un message à un utilisateur ou sur un canal (où on est présent ou pas). 
+  Les arguments `channel` ou `nick` sont optionnels.
 - `/names [channel]` - Affiche les utilisateurs connectés à un canal. Si le canal n’est pas spécifié, affiche tous les utilisateurs de tous les canaux.
 
 D’un point de vue utilisateur, un client IRC sera lancé sur la ligne de commande à l’aide du programme `irc.py` de la manière suivante :
@@ -49,7 +49,7 @@ Cette interface serait composée de deux zones :
 Les serveurs IRC seront lancés avec la commande suivante :
 
 ```
-python server.py server_name [servers]
+python run_server.py server_name [servers]
 ```
 
 où `server_name` représente le nom du nouveau serveur IRC et `servers` est une liste (éventuellement vide) de
@@ -71,38 +71,31 @@ entre les serveurs.
 ## Client
 
 The client is a simple software that just handles commands.  
-When it is created, it is registered on the server.  
-Commands entered by the human are submitted to the server the client is connected to.
+When it is created, it is registered on the run_server.  
+Commands entered by the human are submitted to the run_server the client is connected to.
 
 ## Server
 
-The server doesn't have a GUI.  
-When a client information is received, it is saved only on the server that received it.
+The run_server doesn't have a GUI.  
+When a client information is received, it is saved only on the run_server that received it.
 
 ## Technical notes
 
-Queries are sent over the network with a custom format:
-`command:<nickname>:<command>:<parameters>:<timestamp>`
+Commands are sent over the network with a custom format:
+`command:<author>:<recipient>:<command>:<parameters>:<timestamp>`
 - "command" is a constant
-- `nickname` is the name of the client sending the command
+- `author` is the name of the client sending the command
+- `recipient` is the name of the channel or user to whom the command is directed to. It can be empty.
 - `command` is the name of the command, for example `away`
-- `parameters` contains formatted arguments of the command, for `away` that might be a message
-  ; this is an optional field
+- `parameters` contains a dictionary of parameters, for `away` that might be a message
 - `timestamp` is a UNIX epoch timestamp of the moment when this command was sent
-Responses are sent over the network with this format:
-`response:<author>:<recipient>:<content>:<timestamp>`
-- "response" is a constant
-- `author` is the name of the author, whether it be a client or a server
-- `recipient` is the name of the recipient
-- `content` contains a human-readable string which is supposed to be printed to the user
-- `timestamp` is a UNIX epoch timestamp of the moment this response was sent
 
 ## Limitations and issues
 
 - There is no login security for users. Anyone can be impersonated.
-- As such, multiple users can have the same nickname at the same time (though not on the same server). 
+- As such, multiple users can have the same nickname at the same time (though not on the same run_server). 
   Such a situation can cause a de-sync of messages (one might receive it but not other).
-- Only works on a local machine. As stated by the *Énoncé*, server names are actually localhost port numbers.
+- Only works on a local machine. As stated by the *Énoncé*, run_server names are actually localhost port numbers.
 
 # Usage
 
@@ -113,9 +106,7 @@ $ [python3|python] --version
 $ [python3|python] -m venv venv
 $ source venv/bin/activate
 $ python -m pip install --upgrade -r requirements.txt
-$ bash ./setup_venv.sh
-$ source venv/bin/activate
-$ python [client|server].py
+$ python [client|run_server].py
 ```
 
 On Windows, the process is similar:
@@ -125,9 +116,9 @@ On Windows, the process is similar:
 >>> [py|python] -m venv venv
 >>> venv\Scripts\activate.bat
 >>> python -m pip install --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org --upgrade -r requirements.txt
->>> python [client|server].py
+>>> python [client|run_server].py
 ```
 
 It setups a dedicated environment in the `venv/` directory,
 uses its interpreter, install the requirements, and finally,
-you can run the client or the server.
+you can run the client or the run_server.

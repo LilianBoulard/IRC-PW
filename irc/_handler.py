@@ -1,9 +1,8 @@
-import inspect
-
-from typing import Optional
 from abc import ABC, abstractmethod
+from typing import TypeVar
 
-from .commands import Command
+
+_T = TypeVar("_T")
 
 
 class CommandHandler(ABC):
@@ -11,18 +10,15 @@ class CommandHandler(ABC):
     """
     Base class defining the commands.
 
-    Both the client and the server must subclass this,
+    Both the client and the run_server must subclass this,
     and implement their logic for each command.
     """
 
-    @abstractmethod
-    def __call__(self, to_handle: str, context: dict):
-        """
-        Should take the command to handle
-        (the format depends on whether this is the client or the
-        server receiving it), and call `route` with the appropriate command.
-        """
-        command = self.parse_command(to_handle, context)
+    def __call__(self, to_handle: str):
+        command = self._parse_command(to_handle)
+        if hasattr(command, "is_known"):
+            if command.is_known():
+                return
 
         if not hasattr(self, command.identifier):
             self._invalid(command)
@@ -32,46 +28,46 @@ class CommandHandler(ABC):
         func(command)
 
     @abstractmethod
-    def parse_command(self, command: str, context: dict) -> Command:
+    def _parse_command(self, command: str) -> _T:
         pass
 
     @abstractmethod
-    def away(self, command: Command) -> None:
+    def away(self, command: _T):
         """Indicate to others that this user is unreachable. A message can be optionally passed."""
         pass
 
     @abstractmethod
-    def help(self, command: Command) -> None:
+    def help(self, command: _T):
         """Display the list of available commands."""
         pass
 
     @abstractmethod
-    def invite(self, command: Command) -> None:
+    def invite(self, command: _T):
         """Invite someone in this channel (if applicable)."""
         pass
 
     @abstractmethod
-    def join(self, command: Command) -> None:
+    def join(self, command: _T):
         """Join a channel by name. A key can optionally be passed."""
         pass
 
     @abstractmethod
-    def list(self, command: Command) -> None:
+    def list(self, command: _T):
         """Displays the list of channels on this network."""
         pass
 
     @abstractmethod
-    def msg(self, command: Command) -> None:
+    def msg(self, command: _T):
         """Sends a message to someone or to a channel."""
         pass
 
     @abstractmethod
-    def names(self, command: Command):
+    def names(self, command: _T):
         """Displays the list of users of the specified channel, otherwise, all channels and their users."""
         pass
 
     @abstractmethod
-    def _invalid(self, command: Command):
+    def _invalid(self, command: _T):
         """
         Special method called when the command doesn't have a handling function.
         """
